@@ -43,7 +43,7 @@ def remove_top_comment(python_src: str) -> str:
         lines = lines[1:]
     return "\n".join(lines)
 
-def get_package_string(package_info: dict) -> str:
+def get_package_string(package_info: dict, ascii: bool = True) -> str:
     """ Get the string representation of a package.
         It will be formatted as:
 
@@ -80,7 +80,7 @@ def get_package_string(package_info: dict) -> str:
     output += f"package name: {package_info['package_name']}\n"
     output += f"url: {package_info['source_url']}\n"
     output += f"file tree:\n"
-    output += "\n".join(get_file_tree_string(package_info['file_tree'], ascii=False)) + "\n"
+    output += "\n".join(get_file_tree_string(package_info['file_tree'], ascii=ascii)) + "\n"
     output += add_if('README.md', 'markdown_files')
     output += add_if('Makefile', 'build_files')
     output += add_if('CMakeLists.txt', 'build_files')
@@ -94,11 +94,15 @@ def main():
     input_ds = './dataset.jsonl'
     output_ds = './dataset-clm.jsonl'
     text_column = 'text'
+    text_unicode_column = 'text_unicode'
 
     with open(input_ds, 'r') as fp_in, open(output_ds, 'w') as fp_out:
         for line in alive_it(fp_in, title='Processing packages'):
             package_info = json.loads(line)
-            output = {text_column: get_package_string(package_info)}
+            output = {
+                text_column: get_package_string(package_info, ascii=True),
+                text_unicode_column: get_package_string(package_info, ascii=False)
+            }
             json.dump(output, fp_out)
             fp_out.write('\n')
 
