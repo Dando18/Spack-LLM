@@ -10,7 +10,6 @@ from typing import List, Optional
 # tpl imports
 from alive_progress import alive_it
 import numpy as np
-from transformers import AutoTokenizer
 
 
 def get_file_tree_string(root: List[dict], prefix: str = "", ascii: bool = False, depth: int = 0, max_depth: Optional[int] = None):
@@ -45,7 +44,7 @@ def remove_top_comment(python_src: str) -> str:
         lines = lines[1:]
     return "\n".join(lines)
 
-def get_package_string(package_info: dict, ascii: bool = True, max_tree_depth: Optional[int] = None) -> str:
+def get_package_string(package_info: dict, ascii: bool = True, max_tree_depth: Optional[int] = None, exclude_cmake: bool = False) -> str:
     """ Get the string representation of a package.
         It will be formatted as:
 
@@ -90,7 +89,8 @@ def get_package_string(package_info: dict, ascii: bool = True, max_tree_depth: O
     output += "\n".join(get_file_tree_string(package_info['file_tree'], ascii=ascii, max_depth=max_tree_depth)) + "\n"
     output += add_if('README.md', 'markdown_files')
     output += add_if('Makefile', 'build_files')
-    output += add_if('CMakeLists.txt', 'build_files')
+    if not exclude_cmake:
+        output += add_if('CMakeLists.txt', 'build_files')
     output += add_if('setup.py', 'build_files')
     output += add_if('requirements.txt', 'build_files')
     output += "spack package.py:\n" + remove_top_comment(package_info['package_file']) + "\n"
@@ -107,10 +107,6 @@ def main():
     text_unicode_column = 'text_unicode'
     max_depth = None
     num_lines = count_lines(input_ds)
-    lengths = []
-    tokens = []
-
-    tokenizer = AutoTokenizer.from_pretrained('codellama/CodeLlama-7b-hf')
 
     with open(input_ds, 'r') as fp_in, open(output_ds, 'w') as fp_out:
         for line in alive_it(fp_in, title='Processing packages', total=num_lines):
@@ -119,21 +115,19 @@ def main():
                 text_column: get_package_string(package_info, ascii=True, max_tree_depth=max_depth),
                 text_unicode_column: get_package_string(package_info, ascii=False, max_tree_depth=max_depth)
             }
-            lengths.append(len(output[text_column]))
-            tokens.append(len(tokenizer.encode(output[text_column])))
+
+            if len(output[text_column]) > 40_000:   # probably over 16k tokens
+                output = {
+                    text_column: get_package_string(package_info, ascii=True, max_tree_depth=3),
+                    text_unicode_column: get_package_string(package_info, ascii=False, max_tree_depth=3)
+                }
+                if len(output[text_column]) > 40_000:   # try once more, by removing cmake files
+                    output = {
+                        text_column: get_package_string(package_info, ascii=True, max_tree_depth=3, exclude_cmake=True),
+                        text_unicode_column: get_package_string(package_info, ascii=False, max_tree_depth=3, exclude_cmake=True)
+                    }
             json.dump(output, fp_out)
             fp_out.write('\n')
-
-    print(f"Average length: {sum(lengths) / len(lengths):.2f}")
-    print(f"Max length: {max(lengths)}")
-    print(f"Min length: {min(lengths)}")
-    print(f"Median length: {np.median(lengths)}")
-
-    print(f"Average tokens: {sum(tokens) / len(tokens):.2f}")
-    print(f"Max tokens: {max(tokens)}")
-    print(f"Min tokens: {min(tokens)}")
-    print(f"Median tokens: {np.median(tokens)}")
-    print(f"Above 16k tokens: {sum(1 for t in tokens if t > 16000)}")
 
 if __name__ == '__main__':
     main()
