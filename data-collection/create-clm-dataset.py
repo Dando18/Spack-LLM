@@ -10,6 +10,7 @@ from typing import List, Optional
 # tpl imports
 from alive_progress import alive_it
 import numpy as np
+from transformers import AutoTokenizer
 
 
 def get_file_tree_string(root: List[dict], prefix: str = "", ascii: bool = False, depth: int = 0, max_depth: Optional[int] = None):
@@ -95,30 +96,44 @@ def get_package_string(package_info: dict, ascii: bool = True, max_tree_depth: O
     output += "spack package.py:\n" + remove_top_comment(package_info['package_file']) + "\n"
     return output
 
+def count_lines(s: str) -> int:
+    with open(s, 'r') as fp:
+        return len(fp.readlines())
 
 def main():
     input_ds = './dataset.jsonl'
     output_ds = './dataset-clm.jsonl'
     text_column = 'text'
     text_unicode_column = 'text_unicode'
-    max_depth = 4
+    max_depth = None
+    num_lines = count_lines(input_ds)
     lengths = []
+    tokens = []
+
+    tokenizer = AutoTokenizer.from_pretrained('codellama/CodeLlama-7b-hf')
 
     with open(input_ds, 'r') as fp_in, open(output_ds, 'w') as fp_out:
-        for line in alive_it(fp_in, title='Processing packages'):
+        for line in alive_it(fp_in, title='Processing packages', total=num_lines):
             package_info = json.loads(line)
             output = {
                 text_column: get_package_string(package_info, ascii=True, max_tree_depth=max_depth),
                 text_unicode_column: get_package_string(package_info, ascii=False, max_tree_depth=max_depth)
             }
             lengths.append(len(output[text_column]))
+            tokens.append(len(tokenizer.encode(output[text_column])))
             json.dump(output, fp_out)
             fp_out.write('\n')
 
-    print(f"Average length: {sum(lengths) / len(lengths):.2}")
+    print(f"Average length: {sum(lengths) / len(lengths):.2f}")
     print(f"Max length: {max(lengths)}")
     print(f"Min length: {min(lengths)}")
     print(f"Median length: {np.median(lengths)}")
+
+    print(f"Average tokens: {sum(tokens) / len(tokens):.2f}")
+    print(f"Max tokens: {max(tokens)}")
+    print(f"Min tokens: {min(tokens)}")
+    print(f"Median tokens: {np.median(tokens)}")
+    print(f"Above 16k tokens: {sum(1 for t in tokens if t > 16000)}")
 
 if __name__ == '__main__':
     main()
