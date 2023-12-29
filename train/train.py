@@ -177,24 +177,28 @@ tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
 
 # Step 6: Extra data processing that requires the tokenizer
-chars_per_token = chars_token_ratio(train_dataset, tokenizer)
-collator = DataCollatorForCompletionOnlyLM("spack package.py:\n", tokenizer=tokenizer)
+#chars_per_token = chars_token_ratio(train_dataset, tokenizer)
+response_template_with_context = "\nspack package.py:"
+response_template_ids = tokenizer.encode(response_template_with_context, add_special_tokens=False)[2:]
+collator = DataCollatorForCompletionOnlyLM(response_template_ids, tokenizer=tokenizer)
 
-train_dataset = ConstantLengthDataset(
-    tokenizer,
-    train_dataset,
-    infinite=False,
-    seq_length=script_args.seq_length,
-    chars_per_token=chars_per_token,
-)
-
-test_dataset = ConstantLengthDataset(
-    tokenizer,
-    test_dataset,
-    infinite=False,
-    seq_length=script_args.seq_length,
-    chars_per_token=chars_per_token
-)
+#train_dataset = ConstantLengthDataset(
+#    tokenizer,
+#    train_dataset,
+#    infinite=False,
+#    dataset_text_field=script_args.dataset_text_field,
+#    seq_length=script_args.seq_length,
+#    chars_per_token=chars_per_token,
+#)
+#
+#test_dataset = ConstantLengthDataset(
+#    tokenizer,
+#    test_dataset,
+#    infinite=False,
+#    dataset_text_field=script_args.dataset_text_field,
+#    seq_length=script_args.seq_length,
+#    chars_per_token=chars_per_token
+#)
 
 # Step 7: Define the trainer
 trainer = SFTTrainer(
@@ -208,6 +212,7 @@ trainer = SFTTrainer(
     peft_config=peft_config,
     tokenizer=tokenizer,
     packing=script_args.packing,
+    dataset_num_proc=script_args.num_workers,
 )
 
 trainer.train()

@@ -22,7 +22,7 @@ accelerate launch \
     train.py \
         --model_name codellama/CodeLlama-7b-hf \
         --dataset_name daniellnichols/package-metadata \
-        --dataset_text_field text \
+        --dataset_text_field "text" \
         --learning_rate 1.41e-5 \
         --batch_size 1 \
         --seq_length 16384 \
