@@ -5,13 +5,14 @@
 """
 # std imports
 import json
-from typing import List
+from typing import List, Optional
 
 # tpl imports
 from alive_progress import alive_it
+import numpy as np
 
 
-def get_file_tree_string(root: List[dict], prefix: str = "", ascii: bool = False):
+def get_file_tree_string(root: List[dict], prefix: str = "", ascii: bool = False, depth: int = 0, max_depth: Optional[int] = None):
     """ Get the string representation of a file tree.
         It will be formatted as:
 
@@ -30,9 +31,9 @@ def get_file_tree_string(root: List[dict], prefix: str = "", ascii: bool = False
     pointers = [tee] * (len(root) - 1) + [last]
     for pointer, child in zip(pointers, root):
         yield prefix + pointer + child['name'] + ("/" if child['type'] == 'directory' else "")
-        if child['type'] == 'directory' and 'contents' in child and len(child['contents']) > 0:
+        if child['type'] == 'directory' and 'contents' in child and len(child['contents']) > 0 and (max_depth is None or depth < max_depth):
             extension = branch if pointer == tee else space
-            yield from get_file_tree_string(child['contents'], prefix + extension, ascii=ascii)
+            yield from get_file_tree_string(child['contents'], prefix + extension, ascii=ascii, depth=depth+1, max_depth=max_depth)
 
 
 def remove_top_comment(python_src: str) -> str:
@@ -43,12 +44,14 @@ def remove_top_comment(python_src: str) -> str:
         lines = lines[1:]
     return "\n".join(lines)
 
-def get_package_string(package_info: dict, ascii: bool = True) -> str:
+def get_package_string(package_info: dict, ascii: bool = True, max_tree_depth: Optional[int] = None) -> str:
     """ Get the string representation of a package.
         It will be formatted as:
 
         package name: <package_name>
         url: <url>
+        versions:
+            <versions>
         file tree:
             <file_tree>
         README.md:
@@ -76,11 +79,14 @@ def get_package_string(package_info: dict, ascii: bool = True) -> str:
             return f"{fname}:\n{package_info[key][fname]}\n"
         return ""
 
+    version_str = "\n".join(" - ".join(v) for v in package_info['versions'])
+
     output = ""
     output += f"package name: {package_info['package_name']}\n"
     output += f"url: {package_info['source_url']}\n"
+    output += f"versions:\n{version_str}\n"
     output += f"file tree:\n"
-    output += "\n".join(get_file_tree_string(package_info['file_tree'], ascii=ascii)) + "\n"
+    output += "\n".join(get_file_tree_string(package_info['file_tree'], ascii=ascii, max_depth=max_tree_depth)) + "\n"
     output += add_if('README.md', 'markdown_files')
     output += add_if('Makefile', 'build_files')
     output += add_if('CMakeLists.txt', 'build_files')
@@ -95,17 +101,24 @@ def main():
     output_ds = './dataset-clm.jsonl'
     text_column = 'text'
     text_unicode_column = 'text_unicode'
+    max_depth = 4
+    lengths = []
 
     with open(input_ds, 'r') as fp_in, open(output_ds, 'w') as fp_out:
         for line in alive_it(fp_in, title='Processing packages'):
             package_info = json.loads(line)
             output = {
-                text_column: get_package_string(package_info, ascii=True),
-                text_unicode_column: get_package_string(package_info, ascii=False)
+                text_column: get_package_string(package_info, ascii=True, max_tree_depth=max_depth),
+                text_unicode_column: get_package_string(package_info, ascii=False, max_tree_depth=max_depth)
             }
+            lengths.append(len(output[text_column]))
             json.dump(output, fp_out)
             fp_out.write('\n')
 
+    print(f"Average length: {sum(lengths) / len(lengths):.2}")
+    print(f"Max length: {max(lengths)}")
+    print(f"Min length: {min(lengths)}")
+    print(f"Median length: {np.median(lengths)}")
 
 if __name__ == '__main__':
     main()

@@ -3,8 +3,10 @@
     author: Daniel Nichols
     date: October 2023
 """
+# std imports
 from glob import glob
 import json
+import multiprocessing
 import os
 from os import PathLike
 import requests
@@ -15,37 +17,54 @@ import tempfile
 from typing import List, Mapping, Tuple
 from urllib.parse import urlparse
 
+# tpl imports
 from alive_progress import alive_it
-
 import spack
 import spack.fetch_strategy as fs
 from spack.package_base import preferred_version
+from spack.stage import Stage
 
 
 class SourceInfo:
-    source_url: str
+    fetch_strategy: str
     file_tree: dict
     markdown_files: dict
     txt_files: dict
     build_files: dict
 
-    def __init__(self, source_url: str):
-        self.source_url = source_url
+    def __init__(self, fetch_strategy: str):
+        self.fetch_strategy = fetch_strategy
 
     def collect(self):
         with tempfile.TemporaryDirectory() as dir:
             # gather source
-            repo_root = self._clone(self.source_url, dir)
+            #repo_root = self._clone(self.fetch_strategy, dir)
+            output_queue = multiprocessing.Queue()
+            output = {'repo_root': None}
+            output_queue.put(output)
+            proc = multiprocessing.Process(target=self._clone, args=(self.fetch_strategy, dir, output_queue))
+            proc.start()
+
+            proc.join(30)
+            repo_root = output_queue.get()['repo_root']
+            if proc.is_alive():
+                proc.terminate()
+                proc.join()
+                raise RuntimeError(f"Fetching {self.fetch_strategy} timed out.")
 
             # create file tree
             self.file_tree = self._get_file_tree(repo_root)
             self.file_tree = self.file_tree['contents']
+            if len(self.file_tree) == 1:
+                self.file_tree = self.file_tree[0]['contents']
 
             # get the contents of all markdown files
             self.markdown_files = self._get_contents_by_pattern(repo_root, '**/*.md')
 
             # get the contents of all txt files
-            self.txt_files = self._get_contents_by_pattern(repo_root, '**/*.txt')
+            self.txt_files = {}
+            for pattern in ['**/*.txt', '**/*.rst', '**/*.rtf']:
+                self.txt_files.update(self._get_contents_by_pattern(repo_root, pattern))
 
             # get the contents of all build files
             self.build_files = {}
@@ -54,29 +73,23 @@ class SourceInfo:
 
     def toDict(self) -> dict:
         return {
-            'source_url': str(self.source_url),
+            'source_url': str(self.fetch_strategy),
             'file_tree': self.file_tree,
             'markdown_files': self.markdown_files,
             'txt_files': self.txt_files,
             'build_files': self.build_files
         }
 
-    def _clone(self, source_url: str, dest: PathLike) -> PathLike:
+    def _clone(self, fetch_strategy: str, dest: PathLike, output_queue: multiprocessing.Queue) -> PathLike:
         """ Download the .tar.gz file from the url """
-        archive_ext = ['.tar.gz', '.tar.bz2', '.tar.xz', '.zip', '.tgz']
-        if any(str(source_url).endswith(ext) for ext in archive_ext):
-            fetch_and_unpack_archive(str(source_url), dest)
-        elif str(source_url).startswith('[git]'):
-            url = str(source_url).split(' ')[1]
-            out = os.path.join(dest, os.path.basename(url).split('.')[0])
-            run = subprocess.run(['git', 'clone', url, out], capture_output=True, timeout=360)
-        else:
-            raise NotImplementedError(f'Unsupported URL type: {source_url}')
-        if len(os.listdir(dest)) == 1:
-            dest = os.path.join(dest, os.listdir(dest)[0])
-        else:
-            print(os.listdir(dest))
-            raise RuntimeError('Multiple directories in repo root')
+        with Stage(fetch_strategy) as stage:
+            fetch_strategy.fetch()
+            fetch_strategy.expand()
+            shutil.copytree(stage.source_path, dest, dirs_exist_ok=True)
+            
+            obj = output_queue.get()
+            obj = {'repo_root': dest}
+            output_queue.put(obj)
         return dest
 
     def _get_file_tree(self, tree_root: PathLike) -> dict:
@@ -101,34 +114,6 @@ class SourceInfo:
             paths_to_contents[path_without_root] = get_file_contents(fpath)
         return paths_to_contents
 
-def fetch_and_unpack_archive(url: str, dest:PathLike):
-    """
-    Download and unpack the archive (tar.gz, tar.xz, tar.bz2, zip) from url into dest.
-
-    Args:
-        url (str): URL of the archive.
-        dest (PathLike): Destination path to unpack the archive.
-
-    Raises:
-        ValueError: If the archive format is not supported.
-    """
-    # Parse the URL to get the file name
-    file_name = os.path.basename(urlparse(url).path)
-
-    # Download the file
-    response = requests.get(url, timeout=360)
-    response.raise_for_status()  # Raise an exception if the GET request was unsuccessful
-
-    # Write the downloaded file to disk
-    archive_path = os.path.join(dest, file_name)
-    with open(archive_path, 'wb') as f:
-        f.write(response.content)
-
-    # Unpack the archive
-    shutil.unpack_archive(archive_path, dest)
-
-    # Remove the archive file
-    os.remove(archive_path)
 
 def get_package_files(packages_root: PathLike) -> List[Tuple[str, PathLike]]:
     """ Get all package files in the given directory. """
@@ -155,11 +140,17 @@ def get_package_source_info(package_name: str) -> dict:
     else:
         return None
 
+    # get other versions and urls
+    other_versions = []
+    for version in pkg.versions:
+        other_versions.append((str(version), str(fs.for_package_version(pkg, version))))
+
     # get the package source info with Source
     src = SourceInfo(source_url)
     src.collect()
     out = src.toDict()
     out['package_name'] = package_name
+    out['versions'] = other_versions
     return out
 
 
