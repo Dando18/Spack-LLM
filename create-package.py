@@ -1,4 +1,4 @@
-""" Write a spack package using an llm given a software repo
+""" Write a spack package based on a given repo.
 """
 # std imports
 from argparse import ArgumentParser
@@ -277,8 +277,6 @@ def main():
 
     # create prompt from repo info
     prompt = get_package_string(repo_info, ascii=True, max_tree_depth=args.max_file_tree_depth, exclude_cmake=args.exclude_cmake)
-    print(prompt)
-    exit(0)
 
     # create model
     model = Llama(model_path=args.model, n_ctx=16384, n_threads=args.threads)
@@ -302,9 +300,9 @@ def main():
             fp.write(output_str)
     else:
         for output in generated_output:
-            assert len(output['choices']) == 1
+            assert len(output['choices']) == 1, "Too many outputs"
             output_str = output['choices'][0]['text']
-            print(output_str, flush=True)
+            print(output_str, flush=True, end='')
 
 
 if __name__ == "__main__":
