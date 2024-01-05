@@ -155,6 +155,7 @@ training_args = TrainingArguments(
     push_to_hub=script_args.push_to_hub,
     hub_model_id=script_args.hub_model_id,
     gradient_checkpointing=script_args.gradient_checkpointing,
+    dataloader_num_workers=script_args.num_workers,
     # TODO: uncomment that on the next release
     # gradient_checkpointing_kwargs=script_args.gradient_checkpointing_kwargs,
 )
@@ -179,9 +180,10 @@ tokenizer.padding_side = "right"  # Fix weird overflow issue with fp16 training
 # Step 6: Extra data processing that requires the tokenizer
 #chars_per_token = chars_token_ratio(train_dataset, tokenizer)
 response_template_with_context = "\nspack package.py:"
-response_template_ids = tokenizer.encode(response_template_with_context, add_special_tokens=False)[2:]
+response_template_ids = tokenizer.encode(response_template_with_context, add_special_tokens=False)[1:]
 collator = DataCollatorForCompletionOnlyLM(response_template_ids, tokenizer=tokenizer)
 
+train_dataset = train_dataset.filter(lambda example: len(tokenizer.encode(example['text'])) < script_args.seq_length)
 #train_dataset = ConstantLengthDataset(
 #    tokenizer,
 #    train_dataset,
@@ -190,7 +192,8 @@ collator = DataCollatorForCompletionOnlyLM(response_template_ids, tokenizer=toke
 #    seq_length=script_args.seq_length,
 #    chars_per_token=chars_per_token,
 #)
-#
+
+test_dataset = test_dataset.filter(lambda example: len(tokenizer.encode(example['text'])) < script_args.seq_length)
 #test_dataset = ConstantLengthDataset(
 #    tokenizer,
 #    test_dataset,
