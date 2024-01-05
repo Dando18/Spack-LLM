@@ -9,3 +9,8 @@ data-collection/*.jsonl.gz
 
 # models
 models/
+# slurm
+train-*.out
+
+# vscode
+.vscode
