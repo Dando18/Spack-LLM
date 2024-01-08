@@ -1,8 +1,9 @@
 # Spack LLM
 
-A large language model trained to generate [Spack](github.com/spack/spack)
-packages. This is mostly experimental to see how well LLMs can generate package
-definitions based on repository meta-data.
+A large language model trained to generate
+[Spack](https://www.github.com/spack/spack) packages. This is mostly
+experimental to see how well LLMs can generate package definitions based on
+repository meta-data.
 
 There are two models, a 7B and 13B parameter model, which are CodeLlama models
 fine-tuned on package meta-data. They are available on HuggingFace:
@@ -17,7 +18,11 @@ available in the GGUF format from
 weights. These can be downloaded with `download.sh`. For example:
 
 ```sh
+# download 7 billion parameter model in 8 bit precision
 sh download.sh 7B_8bit
+
+# download all models (this may take a while)
+sh download.sh all
 ```
 
 ## Install
@@ -29,6 +34,10 @@ python -m venv .env
 source .env/bin/activate
 pip install -r requirements.txt
 ```
+
+See [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) for
+instructions on how to install _llama-cpp-python_ with different compute
+backends, i.e. _cuda_.
 
 ## Generating Spack Packages
 
@@ -77,4 +86,37 @@ Text Generation:
 Output:
   -o OUTPUT, --output OUTPUT
                         Path to the output file. Default: stdout
+```
+
+An example output using this repo as input:
+
+```sh
+$ python create-package.py --model models/spack-llama-13b/ggml-model-q8_0.gguf -p spack-llama --git https://github.com/Dando18/Spack-LLM --threads 4 --max-new-tokens 1024 --top-k 40
+
+from spack.package import *
+
+
+class SpackLlama(Package):
+    """A large language model trained to generate Spack packages."""
+
+    homepage = "https://github.com/Dando18/Spack-LLM"
+    git = "https://github.com/Dando18/Spack-LLM"
+
+    maintainers("dorton21")
+
+    version("main", submodules=True)
+
+    depends_on("py-llaama-cpp-python@0.2.27", type="run")
+
+    def install(self, spec, prefix):
+        install_tree(".", prefix)
+
+    def setup_run_environment(self, env):
+        env.prepend_path("PATH", self.prefix)
+
+    def setup_dependent_build_environment(self, env, dependent_spec):
+        env.prepend_path("PATH", self.prefix)
+
+    def setup_dependent_run_environment(self, env, dependent_spec):
+        env.prepend_path("PATH", self.prefix)
 ```
