@@ -102,11 +102,11 @@ class SpackLlama(Package):
     homepage = "https://github.com/Dando18/Spack-LLM"
     git = "https://github.com/Dando18/Spack-LLM"
 
-    maintainers("dorton21")
+    maintainers("Dando18")
 
-    version("main", submodules=True)
+    version("main")
 
-    depends_on("py-llaama-cpp-python@0.2.27", type="run")
+    depends_on("py-llama-cpp-python@0.2.27", type="run")
 
     def install(self, spec, prefix):
         install_tree(".", prefix)
